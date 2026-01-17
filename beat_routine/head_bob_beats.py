@@ -8,7 +8,7 @@ import time
 import librosa
 import sounddevice as sd
 
-DRY_RUN = True  # Set to False to actually control the robot
+DRY_RUN = False  # Set to False to actually control the robot
 BEATS_PER_MOVE = 4  # Number of beats between each move
 
 if not DRY_RUN:
@@ -86,10 +86,10 @@ async def main():
             print(f"Move on beat {i} at {beat_time:.2f}s...")
             print("  → Move START")
             if not DRY_RUN:
-                await dog.look_down(speed=1.0, duration_ms=move_duration_s * 1000 // 4)
-                await asyncio.sleep(move_duration_s / 4)
-                await dog.look_up(speed=1.0, duration_ms=move_duration_s * 1000 // 4)
-                await asyncio.sleep(move_duration_s / 4)
+                await dog.look_down(speed=1.0, duration_ms=move_duration_s * 1000 // 3)
+                await asyncio.sleep(move_duration_s / 6)
+                await dog.look_up(speed=1.0, duration_ms=move_duration_s * 1000 // 3)
+                await asyncio.sleep(move_duration_s / 6)
             else:
                 # Simulate the bob duration in dry run
                 await asyncio.sleep(move_duration_s)
