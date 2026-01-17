@@ -7,7 +7,12 @@ import asyncio
 import time
 import librosa
 import sounddevice as sd
-from go1pylib import Go1, Go1Mode
+
+DRY_RUN = True  # Set to False to actually control the robot
+BEATS_PER_MOVE = 4  # Number of beats between each move
+
+if not DRY_RUN:
+    from go1pylib import Go1, Go1Mode
 
 
 async def main():
@@ -23,39 +28,51 @@ async def main():
     print(f"Tempo: {tempo[0]:.1f} BPM")
     print(f"Detected {len(beat_times)} beats")
     
-    # Initialize robot
-    print("Connecting to robot...")
-    dog = Go1()
-    dog.init()
+    dog = None
+    # Calculate move duration based on tempo and beats per move
+    # Duration = (beats / BPM) * 60 seconds * 1000 ms
+    move_duration_ms = int((BEATS_PER_MOVE / tempo[0]) * 60 * 1000)
+    print(f"Move duration: {move_duration_ms}ms (fills {BEATS_PER_MOVE} beats)")
     
-    # Wait for connection
-    start_time = time.time()
-    while not dog.mqtt.connected and (time.time() - start_time < 10):
-        await asyncio.sleep(0.1)
     
-    if not dog.mqtt.connected:
-        print("Failed to connect")
-        return
+    if not DRY_RUN:
+        # Initialize robot
+        print("Connecting to robot...")
+        dog = Go1()
+        dog.init()
+        
+        # Wait for connection
+        start_time = time.time()
+        while not dog.mqtt.connected and (time.time() - start_time < 10):
+            await asyncio.sleep(0.1)
+        
+        if not dog.mqtt.connected:
+            print("Failed to connect")
+            return
+        
+        print("Connected!")
+        
+        # Set to stand mode
+        dog.set_mode(Go1Mode.STAND)
+        await asyncio.sleep(2)
+    else:
+        print("\n*** DRY RUN MODE - No robot connection ***\n")
     
-    print("Connected!")
-    
-    # Set to stand mode
-    dog.set_mode(Go1Mode.STAND)
-    await asyncio.sleep(2)
-    
-    print("Starting in 3 seconds...")
-    await asyncio.sleep(3)
+    print("Starting in...")
+    for i in [3, 2, 1]:
+        print(i)
+        await asyncio.sleep(1)
     
     # Play music in separate thread
-    print("Playing music and bobbing head every 16 beats!")
+    print(f"Playing music and bobbing head every {BEATS_PER_MOVE} beats!")
     sd.play(y, sr)
     
     start_time = time.time()
     
     try:
         for i, beat_time in enumerate(beat_times):
-            # Only process every 16th beat
-            if i % 16 != 0:
+            # Only process every Nth beat
+            if i % BEATS_PER_MOVE != 0:
                 continue
             
             # Wait until this beat time
@@ -66,17 +83,24 @@ async def main():
                 await asyncio.sleep(wait_time)
             
             # Bob head
-            print(f"Bobbing on beat {i}...")
-            await dog.look_down(speed=1.0, duration_ms=100)
-            await dog.look_up(speed=0.8, duration_ms=100)
+            print(f"Move on beat {i} at {beat_time:.2f}s...")
+            print("  → Move START")
+            if not DRY_RUN:
+                await dog.look_down(speed=1.0, duration_ms=move_duration_ms // 2)
+                await dog.look_up(speed=0.8, duration_ms=move_duration_ms // 2)
+            else:
+                # Simulate the bob duration in dry run
+                await asyncio.sleep(move_duration_ms / 1000.0)
+            print("  → Move END")
     
     except KeyboardInterrupt:
-        print("Stopped by user")
+        print("\nStopped by user")
     finally:
         sd.stop()
-        await dog.reset_body()
-        dog.set_mode(Go1Mode.WALK)
-        dog.mqtt.disconnect()
+        if not DRY_RUN and dog:
+            await dog.reset_body()
+            dog.set_mode(Go1Mode.WALK)
+            dog.mqtt.disconnect()
         print("Done!")
 
 
