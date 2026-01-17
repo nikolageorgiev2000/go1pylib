@@ -30,9 +30,9 @@ async def main():
     
     dog = None
     # Calculate move duration based on tempo and beats per move
-    # Duration = (beats / BPM) * 60 seconds * 1000 ms
-    move_duration_ms = int((BEATS_PER_MOVE / tempo[0]) * 60 * 1000)
-    print(f"Move duration: {move_duration_ms}ms (fills {BEATS_PER_MOVE} beats)")
+    # Duration = (beats / BPM) * 60 seconds
+    move_duration_s = (BEATS_PER_MOVE / tempo[0]) * 60
+    print(f"Move duration: {move_duration_s}s (fills {BEATS_PER_MOVE} beats)")
     
     
     if not DRY_RUN:
@@ -82,15 +82,17 @@ async def main():
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
             
-            # Bob head
+            # Run move
             print(f"Move on beat {i} at {beat_time:.2f}s...")
             print("  → Move START")
             if not DRY_RUN:
-                await dog.look_down(speed=1.0, duration_ms=move_duration_ms // 2)
-                await dog.look_up(speed=0.8, duration_ms=move_duration_ms // 2)
+                await dog.look_down(speed=1.0, duration_ms=move_duration_s * 1000 // 4)
+                await asyncio.sleep(move_duration_s / 4)
+                await dog.look_up(speed=1.0, duration_ms=move_duration_s * 1000 // 4)
+                await asyncio.sleep(move_duration_s / 4)
             else:
                 # Simulate the bob duration in dry run
-                await asyncio.sleep(move_duration_ms / 1000.0)
+                await asyncio.sleep(move_duration_s)
             print("  → Move END")
     
     except KeyboardInterrupt:
