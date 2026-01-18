@@ -1,0 +1,19 @@
+Sending MQTT commands to the dog.
+You can send these MQTT commands to control the bot always
+
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "standUp"
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "standDown"
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "run"
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "walk"
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "climb"
+You must be in SDK mode 2 to send these (L1+L2 & start)
+
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "dance1"
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "dance2"
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "jumpYaw"
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "straightHand1"
+These commands seem to be somehow black listed on the go1
+
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "backflip"
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "dance3
+mosquitto_pub -h 192.168.12.1 -d -t "controller/action" -m "dance4

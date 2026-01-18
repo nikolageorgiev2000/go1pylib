@@ -3,9 +3,9 @@ import logging
 import shutil
 import subprocess
 import time
+from pathlib import Path
 from typing import Awaitable, Callable, List, Tuple, NamedTuple
 import librosa
-import matplotlib.pyplot as plt
 import IPython.display as ipd
 
 from go1pylib.go1 import Go1, Go1Mode
@@ -22,22 +22,40 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 # Audio file paths and metadata
-SONG_CLIP_PATH = '/home/lalu/Vellav/Robot_Rave_Hackathon/go1pylib/beat_routine/up_town_funk.wav'
+BASE_DIR = Path(__file__).resolve().parent
+SONG_CLIP_PATH = str(BASE_DIR / "up_town_funk.wav")
 SONG_TITLE = "Uptown Funk"
 SONG_CLIP_START_OFFSET = "0:00"
-SONG_CLIP_DURATION_S = 60  # Full clip duration in seconds
+SONG_CLIP_DURATION_S = 270  # Full clip duration in seconds
 
 # Load audio and extract tempo/beat information
-y, sr = librosa.load(SONG_CLIP_PATH)
-tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
-beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+try:
+    if not Path(SONG_CLIP_PATH).is_file():
+        logger.warning(f"Audio file not found: {SONG_CLIP_PATH}. Using default values.")
+        y, sr = None, None
+        beat_frames = []
+        tempo, beat_times = 117, [0.0]
+    else:
+        y, sr = librosa.load(SONG_CLIP_PATH)
+        tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+        beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+        if tempo <= 0:
+            tempo = 117  # Default fallback
+        if len(beat_times) == 0:
+            beat_times = [0.0]
+except Exception as e:
+    logger.warning(f"Error loading audio file: {e}. Using default values.")
+    y, sr = None, None
+    beat_frames = []
+    tempo, beat_times = 117, [0.0]
 
 # Create click track to hear beats with audio
-clicks = librosa.clicks(frames=beat_frames, sr=sr, length=len(y))
-y_with_clicks = y + clicks * 0.5
-
-# Play it (in Jupyter)
-ipd.Audio(y_with_clicks, rate=sr)
+if y is not None and len(beat_frames) > 0:
+    clicks = librosa.clicks(frames=beat_frames, sr=sr, length=len(y))
+    y_with_clicks = y + clicks * 0.5
+    ipd.Audio(y_with_clicks, rate=sr)
+else:
+    logger.warning("Skipping audio playback - audio file not loaded")
 print(f"Tempo: {tempo} BPM")
 print(f"Beat times (seconds): {beat_times}")
 
@@ -105,14 +123,30 @@ class BeatModeMapper:
         
         Args:
             start_beat: Starting beat index
-            end_beat: Ending beat index
+            end_beat: Ending beat index (exclusive)
             
         Returns:
             Tuple of (start_time_seconds, end_time_seconds)
+            
+        Raises:
+            ValueError: If beat range is invalid
         """
-        start_time = self.beat_times[start_beat] if start_beat < len(self.beat_times) else 0
-        end_time = self.beat_times[end_beat - 1] if end_beat <= len(self.beat_times) else self.beat_times[-1]
+        if start_beat < 0 or end_beat < 0:
+            raise ValueError(f"Beat indices cannot be negative: start={start_beat}, end={end_beat}")
+        if start_beat >= len(self.beat_times):
+            logger.warning(f"Start beat {start_beat} exceeds available beats {len(self.beat_times)}")
+            start_beat = len(self.beat_times) - 1
+        if end_beat > len(self.beat_times):
+            logger.warning(f"End beat {end_beat} exceeds available beats {len(self.beat_times)}")
+            end_beat = len(self.beat_times)
+        
+        start_time = self.beat_times[start_beat] if start_beat < len(self.beat_times) else self.beat_times[-1]
+        end_time = self.beat_times[end_beat - 1] if (end_beat - 1) < len(self.beat_times) else self.beat_times[-1]
         return (start_time, end_time)
+    
+    def get_total_beats(self) -> int:
+        """Get the total number of detected beats."""
+        return len(self.beat_times)
 
 
 async def maybe_start_music() -> None:
@@ -234,7 +268,20 @@ async def main():
         logger.info("Connected to robot!")
 
         # Check battery level
+        state_timeout = 10
+        state_start_time = time.time()
         state = dog.mqtt.get_state()
+        while not state:
+            state_elapsed = time.time() - state_start_time
+            if state_elapsed > state_timeout:
+                logger.error("State connection timeout after %.1f seconds", state_elapsed)
+                raise ConnectionError(f"Failed to get state within {state_timeout}s")
+            logger.debug("Waiting for state connection... %.1fs", state_elapsed)
+            await asyncio.sleep(0.1) 
+            state = dog.mqtt.get_state()
+        if not state or not getattr(state, "bms", None):
+            logger.error("Robot state missing BMS data; aborting dance.")
+            return
         battery_soc = state.bms.soc
         logger.info("Battery level: %.1f%%", battery_soc)
         
@@ -252,7 +299,18 @@ async def main():
         # Initialize beat-to-mode mapper
         logger.info("Initializing beat-to-mode mapper...")
         beat_mapper = BeatModeMapper(beat_times, tempo)
-        logger.info(f"Using {len(beat_times)} detected beats for choreography")
+        total_beats = beat_mapper.get_total_beats()
+        logger.info(f"Using {total_beats} detected beats for choreography")
+        
+        # Calculate dynamic beat ranges based on song length
+        # Divide the song into 4 sections proportionally
+        section_size = total_beats // 4
+        warmup_start, warmup_end = 0, min(section_size, total_beats)
+        verse_start, verse_end = warmup_end, min(warmup_end + section_size, total_beats)
+        chorus_start, chorus_end = verse_end, min(verse_end + section_size, total_beats)
+        finale_start, finale_end = chorus_end, total_beats
+        
+        logger.info(f"Beat sections: Warmup[{warmup_start}-{warmup_end}] Verse[{verse_start}-{verse_end}] Chorus[{chorus_start}-{chorus_end}] Finale[{finale_start}-{finale_end}]")
 
         # Set to stand mode for choreography
         logger.info("Setting initial stand mode for choreography...")
@@ -304,37 +362,37 @@ async def main():
             # Execute dance blocks with beat-mapped modes
             logger.info("Starting beat-synchronized dance routine!")
             
-            # Warmup section: beats 0-10, uses STAND mode for stability
-            warmup_mode = beat_mapper.get_mode_for_beat_range(0, 10)
-            start_time_s, end_time_s = beat_mapper.get_beat_time_range(0, 10)
-            logger.info(f"Warmup section: beats 0-10 ({start_time_s:.2f}s - {end_time_s:.2f}s), mode: {warmup_mode.value}")
+            # Warmup section: first quarter, uses STAND mode for stability
+            warmup_mode = beat_mapper.get_mode_for_beat_range(warmup_start, warmup_end)
+            warmup_start_s, warmup_end_s = beat_mapper.get_beat_time_range(warmup_start, warmup_end)
+            logger.info(f"Warmup section: beats {warmup_start}-{warmup_end} ({warmup_start_s:.2f}s - {warmup_end_s:.2f}s), mode: {warmup_mode.value}")
             await perform_block(dog, "Warmup (50% intensity)", warmup_moves, 0.5, 
                               move_duration_ms, pause_s, mode=warmup_mode)
             await dog.reset_body()
             await asyncio.sleep(0.5)
 
-            # Verse section: beats 10-25, uses DANCE1 for dynamic movement
-            verse_mode = beat_mapper.get_mode_for_beat_range(10, 25)
-            start_time_s, end_time_s = beat_mapper.get_beat_time_range(10, 25)
-            logger.info(f"Verse section: beats 10-25 ({start_time_s:.2f}s - {end_time_s:.2f}s), mode: {verse_mode.value}")
+            # Verse section: second quarter, uses DANCE1 for dynamic movement
+            verse_mode = beat_mapper.get_mode_for_beat_range(verse_start, verse_end)
+            verse_start_s, verse_end_s = beat_mapper.get_beat_time_range(verse_start, verse_end)
+            logger.info(f"Verse section: beats {verse_start}-{verse_end} ({verse_start_s:.2f}s - {verse_end_s:.2f}s), mode: {verse_mode.value}")
             await perform_block(dog, "Verse (70% intensity)", verse_moves, 0.7, 
                               move_duration_ms, pause_s, mode=verse_mode)
             await dog.reset_body()
             await asyncio.sleep(0.5)
 
-            # Chorus section: beats 25-40, uses DANCE2 for complex choreography
-            chorus_mode = beat_mapper.get_mode_for_beat_range(25, 40)
-            start_time_s, end_time_s = beat_mapper.get_beat_time_range(25, 40)
-            logger.info(f"Chorus section: beats 25-40 ({start_time_s:.2f}s - {end_time_s:.2f}s), mode: {chorus_mode.value}")
+            # Chorus section: third quarter, uses DANCE2 for complex choreography
+            chorus_mode = beat_mapper.get_mode_for_beat_range(chorus_start, chorus_end)
+            chorus_start_s, chorus_end_s = beat_mapper.get_beat_time_range(chorus_start, chorus_end)
+            logger.info(f"Chorus section: beats {chorus_start}-{chorus_end} ({chorus_start_s:.2f}s - {chorus_end_s:.2f}s), mode: {chorus_mode.value}")
             await perform_block(dog, "Chorus (90% intensity)", chorus_moves, 0.9, 
                               move_duration_ms, pause_s, mode=chorus_mode)
             await dog.reset_body()
             await asyncio.sleep(0.5)
 
-            # Finale section: beats 40-50, maximal expression
-            finale_mode = beat_mapper.get_mode_for_beat_range(40, 50)
-            start_time_s, end_time_s = beat_mapper.get_beat_time_range(40, 50)
-            logger.info(f"Finale section: beats 40-50 ({start_time_s:.2f}s - {end_time_s:.2f}s), mode: {finale_mode.value}")
+            # Finale section: final quarter, maximal expression
+            finale_mode = beat_mapper.get_mode_for_beat_range(finale_start, finale_end)
+            finale_start_s, finale_end_s = beat_mapper.get_beat_time_range(finale_start, finale_end)
+            logger.info(f"Finale section: beats {finale_start}-{finale_end} ({finale_start_s:.2f}s - {finale_end_s:.2f}s), mode: {finale_mode.value}")
             await perform_block(dog, "Finale (100% intensity)", finale_moves, 1.0, 
                               move_duration_ms, pause_s, mode=finale_mode)
             await dog.reset_body()
