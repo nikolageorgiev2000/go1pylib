@@ -76,6 +76,24 @@ def _wait_step(name: str) -> DanceStep:
     return DanceStep(name=name, runner=_run)
 
 
+def _walk_step(name: str, method_name: str, speed: float) -> DanceStep:
+    async def _run(dog: "Go1", duration_ms: float) -> None:
+        from go1pylib import Go1Mode
+        # Switch to walk mode for actual movement
+        dog.set_mode(Go1Mode.WALK)
+        await asyncio.sleep(0.3)  # Brief pause for mode transition
+        
+        # Execute movement
+        method = getattr(dog, method_name)
+        await method(speed=speed, duration_ms=duration_ms)
+        
+        # Switch back to stand mode
+        dog.set_mode(Go1Mode.STAND)
+        await asyncio.sleep(0.3)  # Brief pause for mode transition
+
+    return DanceStep(name=name, runner=_run)
+
+
 DANCE_MOVES: Dict[str, DanceMove] = {
     "head_bob": DanceMove(
         name="head_bob",
@@ -152,16 +170,59 @@ DANCE_MOVES: Dict[str, DanceMove] = {
             _turn_step("turn_right", "right", 0.4),
         ],
     ),
+    "walk_left": DanceMove(
+        name="walk_left",
+        description="Strafe/walk left.",
+        steps=[_walk_step("go_left", "go_left", 0.4)],
+    ),
+    "walk_right": DanceMove(
+        name="walk_right",
+        description="Strafe/walk right.",
+        steps=[_walk_step("go_right", "go_right", 0.4)],
+    ),
+    "walk_left_right": DanceMove(
+        name="walk_left_right",
+        description="Walk left, then right to return to position.",
+        steps=[
+            _walk_step("go_left", "go_left", 0.4),
+            _walk_step("go_right", "go_right", 0.4),
+        ],
+    ),
 }
 
 MOVE_SEQUENCE = [
     "head_bob",
+    "head_bob",
+    "head_bob",
+    "head_bob",
+    "head_bob",
+    "head_bob",
+    "head_bob",
+    "head_bob",
     "side_sway",
+    "side_sway",
+    "side_sway",
+    "side_sway",
+    "side_sway",
+    "side_sway",
+    "side_sway",
+    "side_sway",
+    "walk_left",
+    "walk_left",
+    "walk_right",
+    "walk_right",
+    "walk_left",
+    "walk_left",
+    "walk_right",
+    "walk_right",
+]
+
+MOVE_SEQUENCE = MOVE_SEQUENCE + [
     "twist",
     "bounce",
     "look_and_twist",
     "body_wave",
-]
+] * 100
 
 
 async def balance_turn(

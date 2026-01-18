@@ -6,7 +6,7 @@ async def main():
     robot.init()  # Connect to the robot
 
     # Set to WALK mode and move forward
-    robot.set_mode(Go1Mode.WALK)
+    robot.set_mode(Go1Mode.STAND)
     await robot.go_forward(speed=0.3, duration_ms=1000)
 
     # Check battery status

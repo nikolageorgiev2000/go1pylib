@@ -9,7 +9,7 @@ import librosa
 import sounddevice as sd
 from dance_moves import DANCE_MOVES, MOVE_SEQUENCE, run_move
 
-DRY_RUN = False  # Set to False to actually control the robot
+DRY_RUN = True  # Set to False to actually control the robot
 BEATS_PER_MOVE = 2  # Number of beats between each move
 
 if not DRY_RUN:

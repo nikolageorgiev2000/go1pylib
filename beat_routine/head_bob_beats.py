@@ -9,7 +9,7 @@ import librosa
 import sounddevice as sd
 
 DRY_RUN = False  # Set to False to actually control the robot
-BEATS_PER_MOVE = 4  # Number of beats between each move
+BEATS_PER_MOVE = 2  # Number of beats between each move
 
 if not DRY_RUN:
     from go1pylib import Go1, Go1Mode

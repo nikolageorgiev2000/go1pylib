@@ -267,31 +267,6 @@ async def main():
 
         logger.info("Connected to robot!")
 
-        # Check battery level
-        state_timeout = 10
-        state_start_time = time.time()
-        state = dog.mqtt.get_state()
-        while not state:
-            state_elapsed = time.time() - state_start_time
-            if state_elapsed > state_timeout:
-                logger.error("State connection timeout after %.1f seconds", state_elapsed)
-                raise ConnectionError(f"Failed to get state within {state_timeout}s")
-            logger.debug("Waiting for state connection... %.1fs", state_elapsed)
-            await asyncio.sleep(0.1) 
-            state = dog.mqtt.get_state()
-        if not state or not getattr(state, "bms", None):
-            logger.error("Robot state missing BMS data; aborting dance.")
-            return
-        battery_soc = state.bms.soc
-        logger.info("Battery level: %.1f%%", battery_soc)
-        
-        if battery_soc < 20:
-            logger.warning("Battery low (%.1f%%). Dance may be interrupted.", battery_soc)
-        
-        if battery_soc < 10:
-            logger.error("Battery critically low (%.1f%%). Aborting dance.", battery_soc)
-            return
-
         # Initial wait for robot to stabilize
         logger.info("Stabilizing robot...")
         await asyncio.sleep(2)
